@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub 배포용 카카오맵</title>
+    <style>
+        /* 화면 레이아웃 설정 */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body, html { width: 100%; height: 100%; overflow: hidden; font-family: sans-serif; }
+        
+        .container { display: flex; width: 100%; height: 100vh; }
+        
+        /* 왼쪽 검색 영역 */
+        .sidebar { 
+            width: 300px; height: 100%; background: #f8f9fa; 
+            display: flex; flex-direction: column; border-right: 1px solid #ddd;
+            z-index: 10;
+        }
+        .search-box { padding: 20px; background: #fee500; }
+        .search-box input { width: 70%; padding: 8px; border: 1px solid #ccc; }
+        .search-box button { width: 25%; padding: 8px; background: #3c1e1e; color: white; border: none; cursor: pointer; }
+        
+        #result-list { flex: 1; overflow-y: auto; list-style: none; padding: 10px; }
+        .item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; background: white; margin-bottom: 5px; }
+        .item:hover { background: #f0f0f0; }
+
+        /* 오른쪽 지도 영역 */
+        #map { flex: 1; height: 100%; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="sidebar">
+        <div class="search-box">
+            <input type="text" id="keyword" placeholder="장소 검색" onkeypress="if(event.keyCode==13) searchPlaces()">
+            <button onclick="searchPlaces()">검색</button>
+        </div>
+        <ul id="result-list"></ul>
+    </div>
+    <div id="map"></div>
+</div>
+
+<script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=21ef28306588a8b20e20213f3c8fe6b8&libraries=services&autoload=false"></script>
+
+<script>
+    let map;
+    let placeSearch;
+    let markers = [];
+
+    // 지도 로드 후 실행
+    kakao.maps.load(function() {
+        const container = document.getElementById('map');
+        const options = {
+            center: new kakao.maps.LatLng(37.5668, 126.9786), // 서울시청 기본값
+            level: 5
+        };
+        map = new kakao.maps.Map(container, options);
+        placeSearch = new kakao.maps.services.Places();
+
+        // 위치 권한 요청
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(function(pos) {
+                const currentPos = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+                map.setCenter(currentPos);
+                new kakao.maps.Marker({ map: map, position: currentPos });
+            });
+        }
+    });
+
+    // 장소 검색 함수
+    function searchPlaces() {
+        const word = document.getElementById('keyword').value;
+        if (!word.trim()) return;
+
+        placeSearch.keywordSearch(word, function(data, status) {
+            if (status === kakao.maps.services.Status.OK) {
+                displayResults(data);
+            }
+        });
+    }
+
+    // 결과 표시 함수
+    function displayResults(places) {
+        const listEl = document.getElementById('result-list');
+        const bounds = new kakao.maps.LatLngBounds();
+        
+        listEl.innerHTML = "";
+        removeMarkers();
+
+        places.forEach(p => {
+            const pos = new kakao.maps.LatLng(p.y, p.x);
+            const marker = new kakao.maps.Marker({ position: pos, map: map });
+            markers.push(marker);
+
+            const li = document.createElement('li');
+            li.className = 'item';
+            li.innerHTML = `<strong>${p.place_name}</strong><br><small>${p.address_name}</small>`;
+            li.onclick = () => map.panTo(pos);
+            listEl.appendChild(li);
+            
+            bounds.extend(pos);
+        });
+        map.setBounds(bounds);
+    }
+
+    function removeMarkers() {
+        markers.forEach(m => m.setMap(null));
+        markers = [];
+    }
+</script>
+</body>
+</html>
