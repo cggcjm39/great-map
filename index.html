@@ -3,34 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>우리동네 맛집 & 카페 찾기</title>
+    <title>에코 맛집 맵</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body, html { width: 100%; height: 100%; overflow: hidden; font-family: 'Malgun Gothic', sans-serif; }
         .container { display: flex; width: 100%; height: 100vh; }
-        
-        /* 왼쪽 사이드바 및 탭 */
         .sidebar { width: 320px; height: 100%; background: #f8f9fa; display: flex; flex-direction: column; border-right: 1px solid #ddd; z-index: 10; }
         .tab-menu { display: flex; background: #eee; }
         .tab-btn { flex: 1; padding: 15px; border: none; cursor: pointer; font-weight: bold; background: #ddd; }
         .tab-btn.active { background: #fff; color: #e74c3c; border-bottom: 3px solid #e74c3c; }
-
         .search-box { padding: 15px; background: #fff; border-bottom: 1px solid #eee; }
         .search-box input { width: 70%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
         .search-box button { width: 25%; padding: 8px; background: #333; color: white; border: none; cursor: pointer; border-radius: 4px; }
-        
         #result-list { flex: 1; overflow-y: auto; list-style: none; padding: 10px; }
         .item { padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; background: white; margin-bottom: 5px; border-radius: 4px; }
         .item:hover { background: #fdf2f2; }
-        .item strong { color: #333; font-size: 15px; }
-        .item small { color: #777; display: block; margin-top: 4px; }
-
-        /* 지도 영역 */
         #map { flex: 1; height: 100%; }
-
-        /* 커스텀 인포윈도우(말풍선) */
-        .custom-info { padding: 10px; min-width: 150px; font-size: 13px; line-height: 1.6; background: white; border-radius: 8px; }
-        .custom-info strong { color: #e74c3c; display: block; margin-bottom: 3px; }
+        .custom-info { padding: 10px; min-width: 150px; font-size: 13px; line-height: 1.6; background: white; }
+        .custom-info strong { color: #e74c3c; display: block; }
         .custom-info a { color: #3498db; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 5px; }
     </style>
 </head>
@@ -43,7 +33,7 @@
             <button class="tab-btn" id="tab-ce7" onclick="changeCategory('CE7')">카페</button>
         </div>
         <div class="search-box">
-            <input type="text" id="keyword" placeholder="지역명 입력 (예: 강남)" onkeypress="if(event.keyCode==13) searchPlaces()">
+            <input type="text" id="keyword" placeholder="지역명 입력" onkeypress="if(event.keyCode==13) searchPlaces()">
             <button onclick="searchPlaces()">검색</button>
         </div>
         <ul id="result-list"></ul>
@@ -57,8 +47,8 @@
     let map;
     let placeSearch;
     let markers = [];
-    let currentCategory = 'FD6'; 
-    let infoWindow = new kakao.maps.InfoWindow({ zIndex: 10 });
+    let infoWindow; // 1. 선언만 먼저 함
+    let currentCategory = 'FD6';
 
     kakao.maps.load(function() {
         const container = document.getElementById('map');
@@ -67,16 +57,18 @@
             level: 4
         };
         map = new kakao.maps.Map(container, options);
-        placeSearch = new kakao.maps.services.Places();
+        
+        // 2. 반드시 kakao.maps.load 안에서 생성해야 함! (에러 해결 핵심)
+        placeSearch = new kakao.maps.services.Places(); 
+        infoWindow = new kakao.maps.InfoWindow({ zIndex: 10 }); 
 
-        // 1. 내 현재 위치를 파란 점으로 표시
+        // 내 위치 표시
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(function(pos) {
                 const myPos = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
                 map.setCenter(myPos);
-
-                const myLocContent = '<div style="width:14px; height:14px; background: #3498db; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 8px rgba(0,0,0,0.5);"></div>';
-                new kakao.maps.CustomOverlay({ position: myPos, content: myLocContent, map: map });
+                const content = '<div style="width:14px; height:14px; background: #3498db; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 8px rgba(0,0,0,0.5);"></div>';
+                new kakao.maps.CustomOverlay({ position: myPos, content: content, map: map });
             });
         }
     });
@@ -86,20 +78,22 @@
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         if (categoryCode === 'FD6') document.getElementById('tab-fd6').classList.add('active');
         else document.getElementById('tab-ce7').classList.add('active');
-
-        const word = document.getElementById('keyword').value;
-        if (word.trim()) searchPlaces();
+        
+        if (document.getElementById('keyword').value.trim()) searchPlaces();
     }
 
     function searchPlaces() {
         const word = document.getElementById('keyword').value;
         if (!word.trim()) return alert("지역명을 입력해주세요!");
+        
+        // 3. placeSearch가 생성되었는지 확인 후 실행
+        if (!placeSearch) return alert("지도를 불러오는 중입니다. 잠시만 기다려주세요.");
 
         placeSearch.keywordSearch(word, function(data, status) {
             if (status === kakao.maps.services.Status.OK) {
                 displayResults(data);
             } else {
-                alert("검색 결과가 없거나 오류가 발생했습니다.");
+                alert("결과가 없거나 도메인 설정 문제입니다. (에러상태: " + status + ")");
             }
         }, { category_group_code: currentCategory });
     }
@@ -110,18 +104,19 @@
         listEl.innerHTML = "";
         removeMarkers();
 
-        // 2. 카테고리별 마커 색상 설정 (음식점 파랑별, 카페 빨강)
         const blueMarker = "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png"; 
         const redMarker = "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png";  
-        const markerImageSrc = (currentCategory === 'FD6') ? blueMarker : redMarker;
-        const markerImage = new kakao.maps.MarkerImage(markerImageSrc, new kakao.maps.Size(24, 35));
+        const imageSrc = (currentCategory === 'FD6') ? blueMarker : redMarker;
 
         places.forEach(p => {
             const pos = new kakao.maps.LatLng(p.y, p.x);
-            const marker = new kakao.maps.Marker({ position: pos, map: map, image: markerImage });
+            const marker = new kakao.maps.Marker({
+                position: pos, 
+                map: map, 
+                image: new kakao.maps.MarkerImage(imageSrc, new kakao.maps.Size(24, 35))
+            });
             markers.push(marker);
 
-            // 3. 마커 클릭 시 이름·전화번호·링크 표시
             kakao.maps.event.addListener(marker, 'click', function() {
                 const content = `
                     <div class="custom-info">
@@ -150,7 +145,7 @@
     function removeMarkers() {
         markers.forEach(m => m.setMap(null));
         markers = [];
-        infoWindow.close();
+        if(infoWindow) infoWindow.close();
     }
 </script>
 </body>
