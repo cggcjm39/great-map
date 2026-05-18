@@ -1,227 +1,190 @@
 <!DOCTYPE html>
-
 <html lang="ko">
-
 <head>
-
     <meta charset="UTF-8">
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>GitHub 배포용 카카오맵</title>
-
+    <title>에코 맛집 맵 - 주변 맛집 & 카페 찾기</title>
     <style>
-
         /* 화면 레이아웃 설정 */
-
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        body, html { width: 100%; height: 100%; overflow: hidden; font-family: sans-serif; }
-
+        body, html { width: 100%; height: 100%; overflow: hidden; font-family: 'Malgun Gothic', sans-serif; }
         
-
         .container { display: flex; width: 100%; height: 100vh; }
-
         
-
-        /* 왼쪽 검색 영역 */
-
-        .sidebar { 
-
-            width: 300px; height: 100%; background: #f8f9fa; 
-
-            display: flex; flex-direction: column; border-right: 1px solid #ddd;
-
-            z-index: 10;
-
-        }
-
-        .search-box { padding: 20px; background: #fee500; }
-
-        .search-box input { width: 70%; padding: 8px; border: 1px solid #ccc; }
-
-        .search-box button { width: 25%; padding: 8px; background: #3c1e1e; color: white; border: none; cursor: pointer; }
-
+        /* 왼쪽 사이드바 및 탭 스타일 */
+        .sidebar { width: 320px; height: 100%; background: #f8f9fa; display: flex; flex-direction: column; border-right: 1px solid #ddd; z-index: 10; }
         
+        .tab-menu { display: flex; background: #eee; }
+        .tab-btn { flex: 1; padding: 15px; border: none; cursor: pointer; font-weight: bold; background: #ddd; transition: 0.3s; }
+        .tab-btn.active { background: #fff; color: #e74c3c; border-bottom: 3px solid #e74c3c; }
 
+        .search-box { padding: 15px; background: #fff; border-bottom: 1px solid #eee; }
+        .search-box input { width: 70%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        .search-box button { width: 25%; padding: 8px; background: #333; color: white; border: none; cursor: pointer; border-radius: 4px; }
+        
         #result-list { flex: 1; overflow-y: auto; list-style: none; padding: 10px; }
-
-        .item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; background: white; margin-bottom: 5px; }
-
-        .item:hover { background: #f0f0f0; }
-
-
+        .item { padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; background: white; margin-bottom: 5px; border-radius: 4px; }
+        .item:hover { background: #fdf2f2; }
+        .item strong { color: #333; font-size: 15px; }
+        .item small { color: #777; display: block; margin-top: 4px; }
 
         /* 오른쪽 지도 영역 */
-
         #map { flex: 1; height: 100%; }
 
+        /* 커스텀 인포윈도우 스타일 */
+        .custom-info { padding: 10px; min-width: 150px; font-size: 13px; line-height: 1.6; }
+        .custom-info strong { color: #e74c3c; }
+        .custom-info a { color: #3498db; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 5px; }
     </style>
-
 </head>
-
 <body>
 
-
-
 <div class="container">
-
     <div class="sidebar">
-
-        <div class="search-box">
-
-            <input type="text" id="keyword" placeholder="장소 검색" onkeypress="if(event.keyCode==13) searchPlaces()">
-
-            <button onclick="searchPlaces()">검색</button>
-
+        <div class="tab-menu">
+            <button class="tab-btn active" id="tab-fd6" onclick="changeCategory('FD6')">음식점</button>
+            <button class="tab-btn" id="tab-ce7" onclick="changeCategory('CE7')">카페</button>
         </div>
-
+        
+        <div class="search-box">
+            <input type="text" id="keyword" placeholder="지역명 입력 (예: 강남)" onkeypress="if(event.keyCode==13) searchPlaces()">
+            <button onclick="searchPlaces()">검색</button>
+        </div>
         <ul id="result-list"></ul>
-
     </div>
-
     <div id="map"></div>
-
 </div>
-
-
 
 <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=21ef28306588a8b20e20213f3c8fe6b8&libraries=services&autoload=false"></script>
 
-
-
 <script>
-
     let map;
-
     let placeSearch;
-
     let markers = [];
+    let currentCategory = 'FD6'; // 초기 카테고리 (음식점)
+    let infoWindow = new kakao.maps.InfoWindow({ zIndex: 1 });
 
-
-
-    // 지도 로드 후 실행
-
+    // 지도 초기화 로드
     kakao.maps.load(function() {
-
         const container = document.getElementById('map');
-
         const options = {
-
-            center: new kakao.maps.LatLng(37.5668, 126.9786), // 서울시청 기본값
-
-            level: 5
-
+            center: new kakao.maps.LatLng(37.5668, 126.9786),
+            level: 4
         };
-
         map = new kakao.maps.Map(container, options);
-
         placeSearch = new kakao.maps.services.Places();
 
-
-
-        // 위치 권한 요청
-
+        // 내 현재 위치 파란 점으로 표시
         if (navigator.geolocation) {
-
             navigator.geolocation.getCurrentPosition(function(pos) {
+                const myPos = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+                map.setCenter(myPos);
 
-                const currentPos = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
-
-                map.setCenter(currentPos);
-
-                new kakao.maps.Marker({ map: map, position: currentPos });
-
+                // 파란색 점 커스텀 오버레이
+                const myLocationContent = '<div style="width:12px; height:12px; background: #3498db; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 5px rgba(0,0,0,0.4);"></div>';
+                new kakao.maps.CustomOverlay({
+                    position: myPos,
+                    content: myLocationContent,
+                    map: map
+                });
             });
-
         }
-
     });
 
+    // 탭 전환 함수
+    function changeCategory(categoryCode) {
+        currentCategory = categoryCode;
+        
+        // 버튼 활성화 스타일 변경
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        if (categoryCode === 'FD6') document.getElementById('tab-fd6').classList.add('active');
+        else document.getElementById('tab-ce7').classList.add('active');
 
-
-    // 장소 검색 함수
-
-    function searchPlaces() {
-
+        // 기존 검색 결과 초기화 후 자동 재검색 (키워드가 있을 때만)
         const word = document.getElementById('keyword').value;
-
-        if (!word.trim()) return;
-
-
-
-        placeSearch.keywordSearch(word, function(data, status) {
-
-            if (status === kakao.maps.services.Status.OK) {
-
-                displayResults(data);
-
-            }
-
-        });
-
+        if (word.trim()) searchPlaces();
     }
 
+    // 장소 검색 실행
+    function searchPlaces() {
+        const word = document.getElementById('keyword').value;
+        if (!word.trim()) return alert("지역명을 입력해주세요!");
 
+        // 카테고리 코드를 활용한 키워드 검색
+        placeSearch.keywordSearch(word, function(data, status) {
+            if (status === kakao.maps.services.Status.OK) {
+                displayResults(data);
+            } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
+                alert("검색 결과가 없습니다.");
+            }
+        }, {
+            category_group_code: currentCategory
+        });
+    }
 
-    // 결과 표시 함수
-
+    // 결과 목록 및 마커 표시
     function displayResults(places) {
-
         const listEl = document.getElementById('result-list');
-
         const bounds = new kakao.maps.LatLngBounds();
-
         
-
         listEl.innerHTML = "";
-
         removeMarkers();
 
-
+        // 카테고리에 따른 마커 색상 설정
+        // 음식점(FD6)은 파란색, 카페(CE7)는 빨간색 이미지 사용
+        const blueMarker = "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png"; // 파랑별(음식점 대용)
+        const redMarker = "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png";  // 빨강(카페)
+        
+        const markerImageSrc = (currentCategory === 'FD6') ? blueMarker : redMarker;
+        const imageSize = new kakao.maps.Size(24, 35);
+        const markerImage = new kakao.maps.MarkerImage(markerImageSrc, imageSize);
 
         places.forEach(p => {
-
             const pos = new kakao.maps.LatLng(p.y, p.x);
-
-            const marker = new kakao.maps.Marker({ position: pos, map: map });
-
+            const marker = new kakao.maps.Marker({
+                position: pos,
+                map: map,
+                image: markerImage
+            });
+            
             markers.push(marker);
 
+            // 마커 클릭 시 커스텀 말풍선 표시 이벤트
+            kakao.maps.event.addListener(marker, 'click', function() {
+                const content = `
+                    <div class="custom-info">
+                        <strong>${p.place_name}</strong><br>
+                        📞 ${p.phone ? p.phone : '번호 없음'}<br>
+                        <a href="https://map.kakao.com/link/map/${p.id}" target="_blank">상세보기 & 길찾기</a>
+                    </div>
+                `;
+                infoWindow.setContent(content);
+                infoWindow.open(map, marker);
+            });
 
-
+            // 왼쪽 리스트 아이템 생성
             const li = document.createElement('li');
-
             li.className = 'item';
-
             li.innerHTML = `<strong>${p.place_name}</strong><br><small>${p.address_name}</small>`;
-
-            li.onclick = () => map.panTo(pos);
-
-            listEl.appendChild(li);
-
             
-
+            li.onclick = () => {
+                map.panTo(pos);
+                // 리스트 클릭 시 해당 마커의 말풍선도 같이 띄우기
+                kakao.maps.event.trigger(marker, 'click');
+            };
+            
+            listEl.appendChild(li);
             bounds.extend(pos);
-
         });
-
         map.setBounds(bounds);
-
     }
 
-
-
+    // 기존 마커 및 말풍선 삭제
     function removeMarkers() {
-
         markers.forEach(m => m.setMap(null));
-
         markers = [];
-
+        infoWindow.close();
     }
-
 </script>
-
 </body>
-
 </html>
