@@ -3,30 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GitHub 배포용 카카오맵</title>
+    <title>우리동네 재활용 센터 찾기</title>
     <style>
         /* 화면 레이아웃 설정 */
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body, html { width: 100%; height: 100%; overflow: hidden; font-family: sans-serif; }
+        body, html { width: 100%; height: 100%; overflow: hidden; font-family: 'Malgun Gothic', sans-serif; }
         
         .container { display: flex; width: 100%; height: 100vh; }
         
-        /* 왼쪽 검색 영역 */
+        /* 왼쪽 사이드바 */
         .sidebar { 
-            width: 300px; height: 100%; background: #f8f9fa; 
+            width: 320px; height: 100%; background: #f8f9fa; 
             display: flex; flex-direction: column; border-right: 1px solid #ddd;
             z-index: 10;
         }
-        .search-box { padding: 20px; background: #fee500; }
-        .search-box input { width: 70%; padding: 8px; border: 1px solid #ccc; }
-        .search-box button { width: 25%; padding: 8px; background: #3c1e1e; color: white; border: none; cursor: pointer; }
+        .search-box { padding: 20px; background: #28a745; color: white; } /* 재활용 느낌의 초록색 */
+        .search-box h2 { margin-bottom: 10px; font-size: 18px; }
+        .input-group { display: flex; gap: 5px; }
+        .search-box input { flex: 1; padding: 10px; border: none; border-radius: 4px; }
+        .search-box button { padding: 10px; background: #155724; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
         
+        /* 검색 결과 리스트 */
         #result-list { flex: 1; overflow-y: auto; list-style: none; padding: 10px; }
-        .item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; background: white; margin-bottom: 5px; }
-        .item:hover { background: #f0f0f0; }
+        .item { padding: 15px; border-bottom: 1px solid #eee; cursor: pointer; background: white; margin-bottom: 8px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .item:hover { background: #e9f7ef; border-color: #28a745; }
+        .item strong { font-size: 16px; color: #333; }
+        .item p { font-size: 13px; color: #666; margin-top: 5px; }
+        .item .phone { color: #28a745; font-weight: bold; }
 
         /* 오른쪽 지도 영역 */
         #map { flex: 1; height: 100%; }
+
+        /* 커스텀 오버레이(이모티콘 마커) 스타일 */
+        .eco-marker { font-size: 30px; cursor: pointer; text-shadow: 2px 2px 2px rgba(0,0,0,0.2); }
+
+        /* 인포윈도우 스타일 */
+        .info-window { padding: 10px; font-size: 12px; line-height: 1.5; }
     </style>
 </head>
 <body>
@@ -34,8 +46,11 @@
 <div class="container">
     <div class="sidebar">
         <div class="search-box">
-            <input type="text" id="keyword" placeholder="장소 검색" onkeypress="if(event.keyCode==13) searchPlaces()">
-            <button onclick="searchPlaces()">검색</button>
+            <h2>♻️ 재활용 센터 찾기</h2>
+            <div class="input-group">
+                <input type="text" id="keyword" placeholder="동네 이름을 입력하세요" onkeypress="if(event.keyCode==13) searchPlaces()">
+                <button onclick="searchPlaces()">검색</button>
+            </div>
         </div>
         <ul id="result-list"></ul>
     </div>
@@ -47,36 +62,45 @@
 <script>
     let map;
     let placeSearch;
-    let markers = [];
+    let overlays = []; // 이모티콘 마커(오버레이) 보관함
+    let infoWindow = new kakao.maps.InfoWindow({ zIndex: 1 });
 
     // 지도 로드 후 실행
     kakao.maps.load(function() {
         const container = document.getElementById('map');
         const options = {
-            center: new kakao.maps.LatLng(37.5668, 126.9786), // 서울시청 기본값
+            center: new kakao.maps.LatLng(37.5668, 126.9786),
             level: 5
         };
         map = new kakao.maps.Map(container, options);
         placeSearch = new kakao.maps.services.Places();
 
-        // 위치 권한 요청
+        // 현재 위치 요청
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(function(pos) {
                 const currentPos = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
                 map.setCenter(currentPos);
+                // 내 위치는 일반 마커로 표시
                 new kakao.maps.Marker({ map: map, position: currentPos });
             });
         }
     });
 
-    // 장소 검색 함수
+    // 검색 실행 함수
     function searchPlaces() {
         const word = document.getElementById('keyword').value;
-        if (!word.trim()) return;
+        if (!word.trim()) {
+            alert("지역이나 검색어를 입력해주세요!");
+            return;
+        }
 
-        placeSearch.keywordSearch(word, function(data, status) {
+        // 검색어에 '재활용센터'를 붙여서 정확도 높임
+        const searchKeyword = word + " 재활용센터";
+        placeSearch.keywordSearch(searchKeyword, function(data, status) {
             if (status === kakao.maps.services.Status.OK) {
                 displayResults(data);
+            } else {
+                alert("검색 결과가 없습니다.");
             }
         });
     }
@@ -87,27 +111,60 @@
         const bounds = new kakao.maps.LatLngBounds();
         
         listEl.innerHTML = "";
-        removeMarkers();
+        clearMap(); // 기존 마커/오버레이 삭제
 
         places.forEach(p => {
             const pos = new kakao.maps.LatLng(p.y, p.x);
-            const marker = new kakao.maps.Marker({ position: pos, map: map });
-            markers.push(marker);
+            
+            // 1. 이모티콘 커스텀 오버레이 생성
+            const content = `<div class="eco-marker" onclick="showPopup('${p.place_name}', '${p.phone}', '${p.address_name}', ${p.y}, ${p.x})">♻️</div>`;
+            const overlay = new kakao.maps.CustomOverlay({
+                position: pos,
+                content: content,
+                map: map
+            });
+            overlays.push(overlay);
 
+            // 2. 왼쪽 리스트 아이템 생성
             const li = document.createElement('li');
             li.className = 'item';
-            li.innerHTML = `<strong>${p.place_name}</strong><br><small>${p.address_name}</small>`;
-            li.onclick = () => map.panTo(pos);
-            listEl.appendChild(li);
+            li.innerHTML = `
+                <strong>${p.place_name}</strong><br>
+                <p>${p.address_name}</p>
+                <p class="phone">${p.phone ? p.phone : '전화번호 없음'}</p>
+            `;
             
+            // 리스트 클릭 시 지도로 이동 및 팝업 표시
+            li.onclick = () => {
+                map.panTo(pos);
+                showPopup(p.place_name, p.phone, p.address_name, p.y, p.x);
+            };
+            
+            listEl.appendChild(li);
             bounds.extend(pos);
         });
         map.setBounds(bounds);
     }
 
-    function removeMarkers() {
-        markers.forEach(m => m.setMap(null));
-        markers = [];
+    // 마커 클릭 시 나타나는 팝업(인포윈도우) 함수
+    function showPopup(name, phone, addr, lat, lng) {
+        const content = `
+            <div class="info-window">
+                <strong>${name}</strong><br>
+                📞 ${phone ? phone : '정보 없음'}<br>
+                🏠 ${addr}
+            </div>
+        `;
+        infoWindow.setContent(content);
+        infoWindow.setPosition(new kakao.maps.LatLng(lat, lng));
+        infoWindow.open(map);
+    }
+
+    // 지도 위 기존 요소 삭제
+    function clearMap() {
+        overlays.forEach(o => o.setMap(null));
+        overlays = [];
+        infoWindow.close();
     }
 </script>
 </body>
